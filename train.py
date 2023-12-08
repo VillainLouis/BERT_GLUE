@@ -88,7 +88,7 @@ if __name__ == "__main__":
 
     # Config Settings
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model_checkpoint="bert-base-uncased"
+    model_checkpoint="/data/jliu/models/bert-base-uncased"
     task = "cola"
     batch_size=64
     steps = 20
@@ -127,7 +127,7 @@ if __name__ == "__main__":
             global_steps += 1
             pbar.update()
             
-            inputs = prepare_inputs(iterator.next(), device)
+            inputs = prepare_inputs(next(iterator), device)
             step_loss, step_metric, step_metric_1 = training_step(model, inputs, Optimizer, LR_scheduler)
             tr_loss += step_loss
             tr_metric.append(torch.tensor(list(step_metric.values())[0]))
@@ -155,7 +155,7 @@ if __name__ == "__main__":
         global_steps += 1
         pbar.update()
         
-        inputs = prepare_inputs(iterator.next(), device)
+        inputs = prepare_inputs(next(iterator), device)
         step_loss, step_metric, step_metric_1 = eval_step(model, inputs)
         eval_loss += step_loss
         eval_metric.append(torch.tensor(list(step_metric.values())[0]))
