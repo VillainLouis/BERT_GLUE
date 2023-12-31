@@ -88,7 +88,7 @@ if __name__ == "__main__":
     from train import training_step
 
     # Config Settings
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = "cuda:0" # torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model_checkpoint="/data/jliu/models/bert-base-uncased"
     task = "rte"
     batch_size=32
@@ -103,7 +103,37 @@ if __name__ == "__main__":
     from model import CustomBERTModel
     print(f"\nLoading pre-trained BERT model \"{model_checkpoint}\"")
     num_labels = 3 if task.startswith("mnli") else 1 if task=="stsb" else 2
-    model = CustomBERTModel(model_checkpoint, num_labels=num_labels, task=task).to(device)
+    model = CustomBERTModel(model_checkpoint, num_labels=num_labels, task=task)
+
+    finetune_type = "heterlora"
+    if finetune_type == "fedft":
+        pass
+    elif finetune_type == "fedlora":
+        fedlora_depth = 12
+        fedlora_rank = 16
+        test_target_matrix = None
+        model = vallina_lora(model, depth=fedlora_depth, rank=fedlora_rank, alpha=fedlora_rank * 2, test_target_matrix= test_target_matrix)
+        
+    elif finetune_type == "fedadapter":
+        fedadpter_width = 32
+        fedadpter_depth = 6
+        model = add_adapter(model, width=fedadpter_width, depth=fedadpter_depth)
+
+    elif finetune_type == "our":
+        our_total_rank = 192
+        memory = 8
+        model = customized_lora(model,our_total_rank, memory)
+    elif finetune_type == "heterlora":
+        # 不同的秩测试
+        client_rank = 64
+        model = vallina_lora(model, rank=client_rank, alpha=client_rank * 2)
+    else:
+        raise NotImplementedError
+
+    model.to(device)
+    for layer, para in model.named_parameters():
+        if para.requires_grad:
+            print(f"{layer} --> {para.shape}")
 
     Optimizer=torch.optim.SGD(model.parameters(),lr)
     
