@@ -1,7 +1,7 @@
 from torch.utils.data.dataloader import DataLoader
 from datasets import load_dataset
 from transformers.data.data_collator import DataCollatorWithPadding
-from transformers import BertTokenizerFast
+from transformers import BertTokenizerFast, AutoTokenizer
 
 
 def get_dataloader(task:str, model_checkpoint:str, split:str, dataloader_drop_last:bool=True, shuffle:bool=False,
@@ -31,20 +31,26 @@ def get_dataloader(task:str, model_checkpoint:str, split:str, dataloader_drop_la
     "sst2": ("sentence", None),
     "stsb": ("sentence1", "sentence2"),
     "wnli": ("sentence1", "sentence2"),
+    "ag_news": ("text", None),
     }
 
     sentence1_key, sentence2_key = task_to_keys[task]
-
+    
     def preprocess_function(examples):
         if sentence2_key is None:
             return tokenizer(examples[sentence1_key], truncation=True, padding=True)
-        return tokenizer(examples[sentence1_key], examples[sentence2_key], truncation=True, padding=True)
+        return tokenizer(examples[sentence1_key], examples[sentence2_key], truncation=True,  max_length=512, padding=True)
 
-    tokenizer = BertTokenizerFast.from_pretrained(model_checkpoint, use_fast=True)
-    data_collator = DataCollatorWithPadding(tokenizer)
+    tokenizer = AutoTokenizer.from_pretrained(model_checkpoint, use_fast=True)
+    if "tiny-llama" in model_checkpoint:
+        tokenizer.pad_token = tokenizer.eos_token
+    data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
     actual_task = "mnli" if task == "mnli-mm" else task
-    dataset = load_dataset("glue", actual_task)
+    if task == "ag_news":
+        dataset = dataset = load_dataset("ag_news")
+    else:
+        dataset = load_dataset("glue", actual_task)
     encoded_dataset = dataset.map(preprocess_function, batched=True)
     
     columns_to_return = ['input_ids', 'label', 'attention_mask']
@@ -56,6 +62,8 @@ def get_dataloader(task:str, model_checkpoint:str, split:str, dataloader_drop_la
         split = "validation_mismatched"
     
     print(encoded_dataset)
+    # from torch.utils.data import Subset
+    # encoded_dataset[split] = Subset(encoded_dataset[split], range(int(0.1 * len(encoded_dataset[split]))))
     dataloader = DataLoader(
                     encoded_dataset[split],
                     shuffle=shuffle,
