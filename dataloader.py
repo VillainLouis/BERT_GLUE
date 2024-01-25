@@ -32,13 +32,14 @@ def get_dataloader(task:str, model_checkpoint:str, split:str, dataloader_drop_la
     "stsb": ("sentence1", "sentence2"),
     "wnli": ("sentence1", "sentence2"),
     "ag_news": ("text", None),
+    "20news": ("text", None),
     }
 
     sentence1_key, sentence2_key = task_to_keys[task]
     
     def preprocess_function(examples):
         if sentence2_key is None:
-            return tokenizer(examples[sentence1_key], truncation=True, padding=True)
+            return tokenizer(examples[sentence1_key], truncation=True, max_length=512, padding=True)
         return tokenizer(examples[sentence1_key], examples[sentence2_key], truncation=True,  max_length=512, padding=True)
 
     tokenizer = AutoTokenizer.from_pretrained(model_checkpoint, use_fast=True)
@@ -49,6 +50,8 @@ def get_dataloader(task:str, model_checkpoint:str, split:str, dataloader_drop_la
     actual_task = "mnli" if task == "mnli-mm" else task
     if task == "ag_news":
         dataset = dataset = load_dataset("ag_news")
+    elif task == "20news":
+        dataset = load_dataset("SetFit/20_newsgroups")
     else:
         dataset = load_dataset("glue", actual_task)
     encoded_dataset = dataset.map(preprocess_function, batched=True)

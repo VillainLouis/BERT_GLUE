@@ -154,7 +154,7 @@ if __name__ == "__main__":
     print(f"lr -> {lr}")
     # Load DataLoader
     print(f"\nLoading data...")
-    if task == "ag_news":
+    if task in ["ag_news", "20news"]:
         train_epoch_iterator = get_dataloader(task, model_checkpoint, "train", batch_size=batch_size)
         eval_epoch_iterator = get_dataloader(task, model_checkpoint, "test", batch_size=batch_size)
     else:
@@ -166,6 +166,8 @@ if __name__ == "__main__":
     print(f"\nLoading pre-trained BERT model \"{model_checkpoint}\"")
     if task == "ag_news":
         num_labels = 4
+    elif task == "20news":
+        num_labels = 20
     else:
         num_labels = 3 if task.startswith("mnli") else 1 if task=="stsb" else 2
     model = CustomBERTModel(model_checkpoint, num_labels=num_labels, task=task)
@@ -177,7 +179,7 @@ if __name__ == "__main__":
 
     print(f"num of para = {cnt}")
 
-    finetune_type = "fedlora"
+    finetune_type = "our"
     if finetune_type == "fedft":
         pass
     elif finetune_type == "fedlora":
@@ -257,9 +259,9 @@ if __name__ == "__main__":
                 metric_1_all.append(step_metric_1[model.metric_1.name])
             lr_scheduler.step()
             
-            if step % 100:
+            if step % 100 == 0:
                 # evaluation
-                iterator = iter(eval_epoch_iterator)
+                test_iterator = iter(eval_epoch_iterator)
                 trange = range(len(eval_epoch_iterator))
                 model.eval()
                 loss_all=[]
@@ -268,7 +270,7 @@ if __name__ == "__main__":
                 metric_all=[]
                 metric_1_all = []
                 for step in trange:
-                    inputs = prepare_inputs(next(iterator), device)
+                    inputs = prepare_inputs(next(test_iterator), device)
                     step_loss, step_metric, step_metric_1 = eval_step(model, inputs)
                     loss_all.append(step_loss.item())
                     metric_all.append(step_metric[model.metric.name])
