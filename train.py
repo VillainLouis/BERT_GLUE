@@ -19,10 +19,37 @@ parser.add_argument('--task', type=str, default="sst2")
 parser.add_argument('--batch_size', type=int, default=4)
 parser.add_argument('--optimizer', type=str, default="SGD")
 parser.add_argument('--device', type=str, default="0")
+parser.add_argument('--method', type=str, default="fedlora")
+parser.add_argument('--test_interval', type=int, default=100)
+parser.add_argument('--epoch', type=int, default=10)
 
+parser.add_argument('--logger_name', type=str, default="my_logger")
+parser.add_argument('--log_name', type=str, default="test.log")
 
 args = parser.parse_args()
 
+import logging
+
+# 创建logger 对象
+logger = logging.getLogger(args.logger_name)
+logger.setLevel(logging.DEBUG)  
+
+# 创建一个handler写入日志文件  
+fh = logging.FileHandler(args.log_name)
+fh.setLevel(logging.DEBUG)
+
+# 创建一个handler输出到控制台  
+ch = logging.StreamHandler() 
+ch.setLevel(logging.DEBUG)
+
+# 定义handler的输出格式  
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+fh.setFormatter(formatter)
+ch.setFormatter(formatter)
+
+# 给logger添加handler  
+logger.addHandler(fh)
+logger.addHandler(ch)
 
 # logger = logging.getLogger(os.path.basename(__file__).split('.')[0])
 # logger.setLevel(logging.INFO)
@@ -116,13 +143,12 @@ if __name__ == "__main__":
     import torch
     from util import *
     from dataloader import get_dataloader
-    from train import training_step
 
     # Config Settings
     device = "cuda:" + args.device  # torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model_checkpoint=args.model_checkpoint
-    print(f"model_checkpoint --> {model_checkpoint}")
+    logger.info(f"model_checkpoint --> {model_checkpoint}")
     
     task = args.task
     lr = args.lr
@@ -151,9 +177,9 @@ if __name__ == "__main__":
     # elif task =="mrpc":
     #     batch_size = 4
     #     lr = 2e-3
-    print(f"lr -> {lr}")
+    logger.info(f"lr -> {lr}")
     # Load DataLoader
-    print(f"\nLoading data...")
+    logger.info(f"\nLoading data...")
     if task in ["ag_news", "20news"]:
         train_epoch_iterator = get_dataloader(task, model_checkpoint, "train", batch_size=batch_size)
         eval_epoch_iterator = get_dataloader(task, model_checkpoint, "test", batch_size=batch_size)
@@ -163,7 +189,7 @@ if __name__ == "__main__":
     
     # Load Pre-trained Model
     from model import CustomBERTModel
-    print(f"\nLoading pre-trained BERT model \"{model_checkpoint}\"")
+    logger.info(f"\nLoading pre-trained BERT model \"{model_checkpoint}\"")
     if task == "ag_news":
         num_labels = 4
     elif task == "20news":
@@ -177,9 +203,9 @@ if __name__ == "__main__":
     for layer, para in model.named_parameters():
         cnt += para.numel()
 
-    print(f"num of para = {cnt}")
+    logger.info(f"num of para = {cnt}")
 
-    finetune_type = "our"
+    finetune_type = args.method
     if finetune_type == "fedft":
         pass
     elif finetune_type == "fedlora":
@@ -208,16 +234,16 @@ if __name__ == "__main__":
 
     process = psutil.Process(os.getpid())
     mem = process.memory_info().rss  
-    print(f"CPU memory occupied by model: {mem / 1024 / 1024} Mbytes")
+    logger.info(f"CPU memory occupied by model: {mem / 1024 / 1024} Mbytes")
 
 
     # Training Loop
-    print(f"\nTraining begins in batches of {batch_size}..")
+    logger.info(f"\nTraining begins in batches of {batch_size}..")
 
     model.to(device)
     for layer, para in model.named_parameters():
         if para.requires_grad:
-            print(f"{layer} --> {para.shape}")
+            logger.info(f"{layer} --> {para.shape}")
 
     if args.optimizer == "SGD":
         Optimizer=torch.optim.SGD(model.parameters(),lr, momentum=0.9)
@@ -228,14 +254,14 @@ if __name__ == "__main__":
 
     lr_scheduler = torch.optim.lr_scheduler.StepLR(Optimizer, step_size=30, gamma=0.99)
 
-    Epoch = 10
+    Epoch = args.epoch
     model.zero_grad()
     Optimizer.zero_grad()
     for ep in range(Epoch):
         # training
         iterator = iter(train_epoch_iterator)
-        print(f"################ Epoch {ep} #####################")
-        print(f"gpu_mem_usage = {torch.cuda.memory_allocated()}")
+        logger.info(f"################ Epoch {ep} #####################")
+        logger.info(f"gpu_mem_usage = {torch.cuda.memory_allocated()}")
         model.train()
         loss_all=[]
         metric_name = model.metric.name
@@ -248,10 +274,10 @@ if __name__ == "__main__":
             inputs = prepare_inputs(next(iterator), device)
             step_loss, step_metric, step_metric_1 = training_step(model, inputs, Optimizer)
             cur_time = time.time()
-            # print(f"time per batch (with batch size = {batch_size}) --> {cur_time - pre_time}")
+            # logger.info(f"time per batch (with batch size = {batch_size}) --> {cur_time - pre_time}")
             pre_time = cur_time
 
-            # print(f"\tstep_loss-->{step_loss}; step_metric --> {step_metric} ; step_metric_1 --> {step_metric_1}")
+            # logger.info(f"\tstep_loss-->{step_loss}; step_metric --> {step_metric} ; step_metric_1 --> {step_metric_1}")
 
             loss_all.append(step_loss.item())
             metric_all.append(step_metric[model.metric.name])
@@ -259,7 +285,7 @@ if __name__ == "__main__":
                 metric_1_all.append(step_metric_1[model.metric_1.name])
             lr_scheduler.step()
             
-            if step % 100 == 0:
+            if step % args.test_interval == 0:
                 # evaluation
                 test_iterator = iter(eval_epoch_iterator)
                 trange = range(len(eval_epoch_iterator))
@@ -277,7 +303,7 @@ if __name__ == "__main__":
                     if model.metric_1 is not None: 
                         metric_1_all.append(step_metric_1[model.metric_1.name])
                     
-                print(f"test loss: {mean(loss_all)}")
-                print(f"test {model.metric.name} --> {mean(metric_all)} ")
+                logger.info(f"test loss: {mean(loss_all)}")
+                logger.info(f"test {model.metric.name} --> {mean(metric_all)} ")
                 if model.metric_1 is not None:
-                    print(f"test {model.metric_1.name} -->  {mean(metric_1_all)}")
+                    logger.info(f"test {model.metric_1.name} -->  {mean(metric_1_all)}")
